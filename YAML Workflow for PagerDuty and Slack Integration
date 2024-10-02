@@ -1,0 +1,43 @@
+
+workflow:
+  id: pagerduty-slack-incident-notification
+  description: Create a PagerDuty incident and notify Slack when a critical alert is triggered.
+
+ 
+  triggers:
+    - type: alert
+      filters:
+        - key: severity
+          value: critical  # Trigger only for critical alerts
+    - type: manual
+
+ 
+  steps:
+    - name: enrich-alert-with-database-info
+      provider:
+        type: postgres
+        config: "{{ providers.postgres-prod }}"
+        with:
+          query: "SELECT customer_name, subscription_status FROM customers WHERE customer_id = '{{ alert.customer_id }}'"
+
+  
+  actions:
+    - name: create-pagerduty-incident
+      provider:
+        type: pagerduty
+        config: "{{ providers.pagerduty-prod }}"
+        with:
+          title: "Critical alert: {{ alert.name }} on {{ alert.source }}"
+          description: "An alert with severity {{ alert.severity }} was triggered. Additional info: {{ step.enrich-alert-with-database-info }}."
+          urgency: "high"
+          escalation_policy: "{{ providers.pagerduty-escalation-policy }}"
+
+   
+    - name: send-slack-notification
+      provider:
+        type: slack
+        config: "{{ providers.slack-prod }}"
+        with:
+          message: "🚨 Critical alert triggered: {{ alert.name }}. Incident created in PagerDuty: {{ step.create-pagerduty-incident }}. Additional details: {{ step.enrich-alert-with-database-info }}."
+          channel: "#alerts"
+
